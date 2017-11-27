@@ -4,40 +4,37 @@
 #property strict
 
 // Input variables
-extern int magic_numb = 0;
+extern int magic_numb  = 0;
 extern double min_lots = 0.1;
 extern double max_lots = 1.0;
-extern double tp_pips = 100;
-extern double sl_pips = 100;
-extern int stoch_K = 5;
-extern int stoch_slow = 3;
-extern int stoch_D = 3;
-extern int stoch_max = 80;
-extern int stoch_min = 20;
-extern int cci_period = 14;
-extern int cci_max = 100;
-extern int cci_min = -100;
-extern int macd_fast = 12;
-extern int macd_slow = 26;
+extern double tp_pips  = 100;
+extern double sl_pips  = 100;
+extern int stoch_K     = 5;
+extern int stoch_slow  = 3;
+extern int stoch_D     = 3;
+extern int stoch_max   = 80;
+extern int stoch_min   = 20;
+extern int cci_period  = 14;
+extern int cci_max     = 100;
+extern int cci_min     = -100;
+extern int macd_fast   = 12;
+extern int macd_slow   = 26;
 extern int macd_signal = 9;
 
 // Internal state variables
-bool buy_trade  = false;
-bool sell_trade = false;
-bool buy_stop   = false;
-bool sell_stop  = false;
-bool in_trade   = false;
-bool prev_trade = false;
+bool buy_trade      = false;
+bool sell_trade     = false;
+bool in_trade       = false;
+bool prev_trade     = false;
 double prev_balance = 0;
 double price        = 0;
 double profit       = 0;
 double stoploss     = 0;
 double takeprofit   = 0;
-int error        = 0;
-int points       = 0;
-int total_trades = 0;
-int ticket  = 0;
-int consec  = 1;
+int error           = 0;
+int points          = 0;
+int ticket          = 0;
+int consec          = 1;
 
 int OnInit()
 {
@@ -58,28 +55,28 @@ void OnTick()
 
     if (!in_trade)
     {
-        double macd_signal  = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_TYPICAL, MODE_SIGNAL, 0);
         double stoch_curr   = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_MAIN, 0);
         double stoch_prev   = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_MAIN, 1);
-        double stoch_s_prev = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_SIGNAL, 1);
         double stoch_signal = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_SIGNAL, 0);
+        double stoch_s_prev = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_SIGNAL, 1);
+        double macd_sign    = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_TYPICAL, MODE_SIGNAL, 0);
         double cci          = iCCI(NULL, 0, cci_period, PRICE_TYPICAL, 0);
 
         if (
             stoch_curr < stoch_min    &&
             stoch_curr > stoch_signal &&
             stoch_prev < stoch_s_prev &&
-            cci          < cci_min    &&
-            macd_signal  < 0
-            ) SendOrder(OP_SELLSTOP);
+            cci        < cci_min    &&
+            macd_sign  < 0
+            ) SendOrder(OP_BUY);
 
         if (
             stoch_curr > stoch_max    &&
             stoch_curr < stoch_signal &&
             stoch_prev > stoch_s_prev &&
-            cci          > cci_max    &&
-            macd_signal  > 0
-            ) SendOrder(OP_BUYSTOP);
+            cci        > cci_max    &&
+            macd_sign  > 0
+            ) SendOrder(OP_SELL);
     }
 }
 
@@ -89,18 +86,18 @@ void UpdateState()
     buy_trade  = false;
     sell_trade = false;
     in_trade   = false;
-    buy_stop   = false;
-    sell_stop  = false;
     error      = 0;
     price      = 0;
     stoploss   = 0;
     takeprofit = 0;
 
     // Loop through all the orders to find ours
-    for (int i = 0; i < OrdersTotal(); i++) {
+    for (int i = 0; i < OrdersTotal(); i++)
+    {
         OrderSelect(i, SELECT_BY_POS, MODE_TRADES);
 
-        if (OrderMagicNumber() == magic_numb) {
+        if (OrderMagicNumber() == magic_numb)
+        {
             profit     = OrderProfit();
             price      = OrderOpenPrice();
             in_trade   = true;
@@ -108,73 +105,39 @@ void UpdateState()
             stoploss   = OrderStopLoss();
             ticket     = OrderTicket();
 
-            if (OrderType() == OP_BUY) {
+            if (OrderType() == OP_BUY)
+            {
                 buy_trade  = true;
                 sell_trade = false;
-                buy_stop   = false;
-                sell_stop  = false;
             }
-            if (OrderType() == OP_SELL) {
+            if (OrderType() == OP_SELL)
+            {
                 buy_trade  = false;
                 sell_trade = true;
-                buy_stop   = false;
-                sell_stop  = false;
-            }
-            if (OrderType() == OP_BUYSTOP) {
-                buy_trade  = false;
-                sell_trade = false;
-                buy_stop   = true;
-                sell_stop  = false;
-            }
-            if (OrderType() == OP_SELLSTOP) {
-                buy_trade  = false;
-                sell_trade = false;
-                buy_stop   = false;
-                sell_stop  = true;
             }
             break;
         }
     }
     RefreshRates();
 
-    // Trailing orders
+    // Trailing stop
     double min_stoplevel = MarketInfo(NULL, MODE_STOPLEVEL) * Point;
 
-    if (sell_stop) {
-        double new_price = NormalizeDouble(Bid - min_stoplevel, Digits);
-
-        if (new_price > price)
-        {
-            double take_profit = new_price - (tp_pips * Point);
-            double stop_loss   = new_price + (sl_pips * Point);
-
-            OrderModify(ticket, new_price, stop_loss, take_profit, 0, clrRed);
-        }
-    }
-    if (buy_stop) {
-        double new_price = NormalizeDouble(Ask + min_stoplevel, Digits);
-
-        if (new_price < price)
-        {
-            double take_profit = new_price + (tp_pips * Point);
-            double stop_loss   = new_price - (sl_pips * Point);
-
-            OrderModify(ticket, new_price, stop_loss, take_profit, 0, clrLimeGreen);
-        }
-    }
-
-    // Trailing stop
     if (buy_trade) {
-        if (Bid >= price + min_stoplevel) {
+        if (Bid >= price + min_stoplevel)
+        {
             double new_sl = NormalizeDouble(Bid - min_stoplevel, Digits);
 
-            if (new_sl > stoploss) {
+            if (new_sl > stoploss)
+            {
                 OrderModify(ticket, 0, new_sl, takeprofit, 0, clrNONE);
             }
         }
     }
-    if (sell_trade) {
-        if (Ask <= price - min_stoplevel) {
+    if (sell_trade)
+    {
+        if (Ask <= price - min_stoplevel)
+        {
             double new_sl = NormalizeDouble(Ask + min_stoplevel, Digits);
 
             if (new_sl < stoploss) {
@@ -182,11 +145,10 @@ void UpdateState()
             }
         }
     }
-    
+
     // Count trades ended in profit as points for testing
     if (!in_trade && prev_trade)
     {
-        total_trades++;
         if (AccountBalance() > prev_balance)
         {
             points++;
@@ -199,7 +161,6 @@ void UpdateState()
         }
     }
     prev_trade   = in_trade;
-    
     prev_balance = AccountBalance();
 
     // Print state variables
@@ -214,37 +175,35 @@ void UpdateState()
 void SendOrder(int OP_TYPE)
 {
     int slip          = 100;
-    double price_stop = MarketInfo(NULL, MODE_STOPLEVEL) * Point;
     string comment    = "Magic Number: " + IntegerToString(magic_numb);
     double lots       = min_lots * consec;
-    
+    in_trade = true;
+
     if (lots > max_lots)
         lots = max_lots;
-        
-    RefreshRates();    
-    if (OP_TYPE == OP_SELLSTOP) {
-        buy_stop   = false;
-        sell_stop  = true;
-        sell_trade = false;
+
+    RefreshRates();
+    if (OP_TYPE == OP_SELL)
+    {
+        sell_trade = true;
         buy_trade  = false;
 
-        double take_profit = (Bid - price_stop) - (tp_pips * Point);
-        double stop_loss   = (Bid - price_stop) + (sl_pips * Point);
+        double take_profit = (Bid) - (tp_pips * Point);
+        double stop_loss   = (Ask) + (sl_pips * Point);
 
-        error = OrderSend(Symbol(), OP_TYPE, lots, Bid - price_stop, slip,
+        error = OrderSend(Symbol(), OP_TYPE, lots, Bid, slip,
                           stop_loss, take_profit, comment, magic_numb, 0,
                           clrRed);
     }
-    if (OP_TYPE == OP_BUYSTOP) {
-        buy_stop   = true;
-        sell_stop  = false;
+    if (OP_TYPE == OP_BUY)
+    {
         sell_trade = false;
-        buy_trade  = false;
+        buy_trade  = true;
 
-        double take_profit = (Ask + price_stop) + (tp_pips * Point);
-        double stop_loss   = (Ask + price_stop) - (sl_pips * Point);
+        double take_profit = (Ask) + (tp_pips * Point);
+        double stop_loss   = (Bid) - (sl_pips * Point);
 
-        error = OrderSend(Symbol(), OP_TYPE, lots, Ask + price_stop, slip,
+        error = OrderSend(Symbol(), OP_TYPE, lots, Ask, slip,
                           stop_loss, take_profit, comment, magic_numb, 0,
                           clrLimeGreen);
     }
