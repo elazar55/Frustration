@@ -8,7 +8,8 @@ extern int magic_numb  = 0;
 extern double min_lots = 0.1;
 extern double max_lots = 1.0;
 extern double tp_pips  = 100;
-extern double sl_pips  = 100;
+extern double sl_multi = 1;
+extern int sl_period   = 14;
 extern int stoch_K     = 5;
 extern int stoch_slow  = 3;
 extern int stoch_D     = 3;
@@ -46,6 +47,9 @@ void OnDeinit(const int reason) {}
 
 double OnTester()
 {
+    //if (TesterStatistics(STAT_PROFIT) <= 0)
+    //    return TesterStatistics(STAT_PROFIT);
+        
     return points;
 }
 
@@ -62,21 +66,19 @@ void OnTick()
         double macd_sign    = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_TYPICAL, MODE_SIGNAL, 0);
         double cci          = iCCI(NULL, 0, cci_period, PRICE_TYPICAL, 0);
 
-        if (
-            stoch_curr < stoch_min    &&
+        if (stoch_curr < stoch_min    &&
             stoch_curr > stoch_signal &&
             stoch_prev < stoch_s_prev &&
-            cci        < cci_min    &&
-            macd_sign  < 0
-            ) SendOrder(OP_BUY);
+            cci        < cci_min      &&
+            macd_sign  < 0)
+                SendOrder(OP_BUY);
 
-        if (
-            stoch_curr > stoch_max    &&
+        if (stoch_curr > stoch_max    &&
             stoch_curr < stoch_signal &&
             stoch_prev > stoch_s_prev &&
-            cci        > cci_max    &&
-            macd_sign  > 0
-            ) SendOrder(OP_SELL);
+            cci        > cci_max      &&
+            macd_sign  > 0)
+                SendOrder(OP_SELL);
     }
 }
 
@@ -123,7 +125,8 @@ void UpdateState()
     // Trailing stop
     double min_stoplevel = MarketInfo(NULL, MODE_STOPLEVEL) * Point;
 
-    if (buy_trade) {
+    if (buy_trade)
+    {
         if (Bid >= price + min_stoplevel)
         {
             double new_sl = NormalizeDouble(Bid - min_stoplevel, Digits);
@@ -156,28 +159,41 @@ void UpdateState()
         }
         else
         {
-            points--;
             consec = 1;
+            points -= 2;
         }
     }
     prev_trade   = in_trade;
     prev_balance = AccountBalance();
 
     // Print state variables
+    double ma = iMA(NULL, NULL, sl_period, 0, MODE_SMA, PRICE_TYPICAL, 0);
+    double pr = Bid;
+    double sl = (MathAbs(ma - pr) / Point) * sl_multi;
     Comment(
            "\nProfit: "    + DoubleToStr(profit, 2)   + " - " +
            "Consecutive: " + IntegerToString(consec)  + " - " +
            "In Trade: "    + DoubleToStr(in_trade, 0) + " - " +
+           "SL: "          + DoubleToStr(sl, 0)       + " - " +
            "Time: "        + IntegerToString(TimeCurrent() - Time[0])
            );
 }
 
 void SendOrder(int OP_TYPE)
 {
-    int slip          = 100;
-    string comment    = "Magic Number: " + IntegerToString(magic_numb);
-    double lots       = min_lots * consec;
+    int slip       = 100;
+    string comment = "Magic Number: " + IntegerToString(magic_numb);
+    double lots    = min_lots * consec;
     in_trade = true;
+    
+    double ma = iMA(NULL, NULL, sl_period, 0, MODE_SMA, PRICE_TYPICAL, 0);
+    double pr = Bid;
+    double sl = (MathAbs(ma - pr) / Point) * sl_multi;
+    
+    double min_stoplevel = MarketInfo(NULL, MODE_STOPLEVEL);
+    
+    if (sl < min_stoplevel)
+        sl = min_stoplevel;
 
     if (lots > max_lots)
         lots = max_lots;
@@ -188,23 +204,19 @@ void SendOrder(int OP_TYPE)
         sell_trade = true;
         buy_trade  = false;
 
-        double take_profit = (Bid) - (tp_pips * Point);
-        double stop_loss   = (Ask) + (sl_pips * Point);
+        double take_profit = NormalizeDouble(Bid - tp_pips * Point, Digits);
+        double stop_loss   = NormalizeDouble(Ask + sl      * Point, Digits);
 
-        error = OrderSend(Symbol(), OP_TYPE, lots, Bid, slip,
-                          stop_loss, take_profit, comment, magic_numb, 0,
-                          clrRed);
+        error = OrderSend(Symbol(), OP_TYPE, lots, Bid, slip, stop_loss, take_profit, comment, magic_numb, 0, clrRed);
     }
     if (OP_TYPE == OP_BUY)
     {
         sell_trade = false;
         buy_trade  = true;
 
-        double take_profit = (Ask) + (tp_pips * Point);
-        double stop_loss   = (Bid) - (sl_pips * Point);
+        double take_profit = NormalizeDouble(Ask + tp_pips * Point, Digits);
+        double stop_loss   = NormalizeDouble(Bid - sl      * Point, Digits);
 
-        error = OrderSend(Symbol(), OP_TYPE, lots, Ask, slip,
-                          stop_loss, take_profit, comment, magic_numb, 0,
-                          clrLimeGreen);
+        error = OrderSend(Symbol(), OP_TYPE, lots, Ask, slip, stop_loss, take_profit, comment, magic_numb, 0, clrLimeGreen);
     }
 }
