@@ -9,6 +9,8 @@ extern double min_lots = 0.01;
 extern double max_lots = 0.01;
 extern double tp_pips  = 40;
 extern double sl_pips  = 20;
+extern int stddev_period = 20;
+extern int stddev_pips = 20;
 extern int stoch_K     = 5;
 extern int stoch_slow  = 3;
 extern int stoch_D     = 3;
@@ -45,19 +47,29 @@ void OnDeinit(const int reason) {}
 
 double OnTester()
 {
-    double prof   = TesterStatistics(STAT_PROFIT);
-    double trades = TesterStatistics(STAT_TRADES);
+    double PROFIT           = TesterStatistics(STAT_PROFIT);
+    double TRADES           = TesterStatistics(STAT_TRADES);
+    double PROFIT_TRADES    = TesterStatistics(STAT_PROFIT_TRADES);
+    double CONPROFIT_TRADES = TesterStatistics(STAT_MAX_CONPROFIT_TRADES);
     
-    if (prof < 0) return prof;
-    return trades;
+    double confidence = MathSqrt(TRADES) / MathSqrt(200);
+    if (confidence > 1) confidence = 1;
+    
+    if (TRADES == 0) return 0;
+    return NormalizeDouble((PROFIT_TRADES * 100 / TRADES)  * confidence, 2);
 }
 
 void OnTick()
 {
     UpdateState();
     
+    // Trade once per candle
     if (prev_time == Time[0]) return;
     prev_time = Time[0];
+
+    // Don't trade if below volatility
+    double stdDev = iStdDev(NULL, 0, stddev_period, 0, MODE_SMA, PRICE_TYPICAL, 0) / Point;
+    if (stdDev < stddev_pips) return;
 
     if (!in_trade)
     {
@@ -75,9 +87,9 @@ void OnTick()
         int cci_center = 0;
         int cci_max = cci_center + cci_levels;
         int cci_min = cci_center - cci_levels;
-
+        
         if (stoch_curr > stoch_max && stoch_curr < stoch_signal && stoch_prev > stoch_s_prev && cci_curr > cci_max && macd_sign < 0) SendOrder(OP_SELL);
-        if (stoch_curr < stoch_min && stoch_curr > stoch_signal && stoch_prev < stoch_s_prev && cci_curr < cci_min && macd_sign > 0) SendOrder(OP_BUY);
+        if (stoch_curr < stoch_min && stoch_curr > stoch_signal && stoch_prev < stoch_s_prev && cci_curr < cci_min && macd_sign > 0) SendOrder(OP_BUY); 
     }
 }
 
@@ -170,6 +182,7 @@ void UpdateState()
            "\nProfit: "    + DoubleToStr(profit, 2)   + " - " +
            "Consecutive: " + IntegerToString(consec)  + " - " +
            "In Trade: "    + DoubleToStr(in_trade, 0) + " - " +
+           "StdDev: "      + DoubleToStr(iStdDev(NULL, 0, stddev_period, 0, MODE_SMA, PRICE_TYPICAL, 0) / Point, 0) + " - " +
            "Time: "        + IntegerToString(TimeCurrent() - Time[0])
            );
 }
