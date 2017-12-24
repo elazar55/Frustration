@@ -5,21 +5,22 @@
 
 // Input variables
 extern int magic_numb  = 1;
+extern int training_target = 100;
 extern double min_lots = 0.01;
 extern double max_lots = 0.01;
-extern double tp_pips  = 40;
+extern double tp_pips  = 20;
 extern double sl_pips  = 20;
-extern int stddev_period = 20;
-extern int stddev_pips = 20;
-extern int stoch_K     = 5;
-extern int stoch_slow  = 3;
-extern int stoch_D     = 3;
+extern int stoch_K = 5;
+extern int stoch_S = 3;
+extern int stoch_D = 3;
 extern int stoch_levels = 30;
-extern int cci_period  = 14;
-extern int cci_levels  = 100;
-extern int macd_fast   = 12;
-extern int macd_slow   = 26;
-extern int macd_signal = 9;
+extern int cci_period = 14;
+extern int cci_levels = 100;
+extern int rsi_period = 14;
+extern int rsi_levels = 30;
+extern int macd_fast = 12;
+extern int macd_slow = 26;
+extern int macd_ema  = 9;
 
 // Internal state variables
 bool buy_trade      = false;
@@ -52,7 +53,7 @@ double OnTester()
     double PROFIT_TRADES    = TesterStatistics(STAT_PROFIT_TRADES);
     double CONPROFIT_TRADES = TesterStatistics(STAT_MAX_CONPROFIT_TRADES);
     
-    double confidence = MathSqrt(TRADES) / MathSqrt(200);
+    double confidence = MathSqrt(TRADES) / MathSqrt(training_target);
     if (confidence > 1) confidence = 1;
     
     if (TRADES == 0) return 0;
@@ -67,19 +68,9 @@ void OnTick()
     if (prev_time == Time[0]) return;
     prev_time = Time[0];
 
-    // Don't trade if below volatility
-    double stdDev = iStdDev(NULL, 0, stddev_period, 0, MODE_SMA, PRICE_TYPICAL, 0) / Point;
-    if (stdDev < stddev_pips) return;
-
     if (!in_trade)
     {
-        double stoch_curr   = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_MAIN, 1);
-        double stoch_prev   = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_MAIN, 2);
-        double stoch_signal = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_SIGNAL, 1);
-        double stoch_s_prev = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_slow, MODE_SMA, 0, MODE_SIGNAL, 2);
-        double macd_sign    = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_TYPICAL, MODE_SIGNAL, 1);
-        double cci_curr     = iCCI(NULL, 0, cci_period, PRICE_TYPICAL, 1);
-        
+        // Centers
         int stoch_center = 50;
         int stoch_max = stoch_center + stoch_levels;
         int stoch_min = stoch_center - stoch_levels;
@@ -88,8 +79,24 @@ void OnTick()
         int cci_max = cci_center + cci_levels;
         int cci_min = cci_center - cci_levels;
         
-        if (stoch_curr > stoch_max && stoch_curr < stoch_signal && stoch_prev > stoch_s_prev && cci_curr > cci_max && macd_sign < 0) SendOrder(OP_SELL);
-        if (stoch_curr < stoch_min && stoch_curr > stoch_signal && stoch_prev < stoch_s_prev && cci_curr < cci_min && macd_sign > 0) SendOrder(OP_BUY); 
+        int rsi_center = 50;
+        int rsi_max = rsi_center + rsi_levels;
+        int rsi_min = rsi_center - rsi_levels;
+        //---
+    
+        // Indicators
+        double stoch_signal = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_S, MODE_SMA, 0, MODE_SIGNAL, 1);
+        double stoch_main   = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_S, MODE_SMA, 0, MODE_MAIN, 1);
+        double cci          = iCCI(NULL, 0, cci_period, PRICE_TYPICAL, 1);
+        double rsi          = iRSI(NULL, 0, rsi_period, PRICE_TYPICAL, 1);
+        double macd_signal  = iMACD(NULL, 0, macd_fast, macd_slow, macd_ema, PRICE_TYPICAL, MODE_SIGNAL, 1);
+        double macd_main    = iMACD(NULL, 0, macd_fast, macd_slow, macd_ema, PRICE_TYPICAL, MODE_MAIN, 1);
+        //---
+        
+        // Orders
+        if (stoch_main >= stoch_max && stoch_main <= stoch_signal && macd_main >= 0 && macd_main >= macd_signal && cci >= cci_max && rsi >= rsi_max) SendOrder(OP_SELL);
+        if (stoch_main <= stoch_min && stoch_main >= stoch_signal && macd_main <= 0 && macd_main <= macd_signal && cci <= cci_min && rsi <= rsi_min) SendOrder(OP_BUY); 
+        //---
     }
 }
 
@@ -182,7 +189,6 @@ void UpdateState()
            "\nProfit: "    + DoubleToStr(profit, 2)   + " - " +
            "Consecutive: " + IntegerToString(consec)  + " - " +
            "In Trade: "    + DoubleToStr(in_trade, 0) + " - " +
-           "StdDev: "      + DoubleToStr(iStdDev(NULL, 0, stddev_period, 0, MODE_SMA, PRICE_TYPICAL, 0) / Point, 0) + " - " +
            "Time: "        + IntegerToString(TimeCurrent() - Time[0])
            );
 }
