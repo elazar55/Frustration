@@ -4,39 +4,34 @@
 #property strict
 
 // Input variables
-extern int magic_numb  = 1;
-extern int training_target = 100;
-extern double min_lots = 0.01;
-extern double max_lots = 0.01;
-extern double tp_pips  = 20;
-extern double sl_pips  = 20;
-extern int stoch_K = 5;
-extern int stoch_S = 3;
-extern int stoch_D = 3;
-extern int stoch_levels = 30;
-extern int cci_period = 14;
-extern int cci_levels = 100;
-extern int rsi_period = 14;
-extern int rsi_levels = 30;
-extern int macd_fast = 12;
-extern int macd_slow = 26;
-extern int macd_ema  = 9;
+extern int    magic_numb      = 1;
+extern int    training_target = 100;
+extern double min_lots        = 0.01;
+extern double max_lots        = 0.01;
+extern double tp_pips         = 20;
+extern double sl_pips         = 20;
+extern int    stoch_K         = 5;
+extern int    stoch_S         = 3;
+extern int    stoch_D         = 3;
+extern int    stoch_levels    = 30;
+extern int    cci_period      = 14;
+extern int    cci_levels      = 100;
 
 // Internal state variables
-bool buy_trade      = false;
-bool sell_trade     = false;
-bool in_trade       = false;
-bool prev_trade     = false;
+bool   buy_trade    = false;
+bool   sell_trade   = false;
+bool   in_trade     = false;
+bool   prev_trade   = false;
 double prev_balance = 0;
 double price        = 0;
 double profit       = 0;
 double stoploss     = 0;
 double takeprofit   = 0;
-int error           = 0;
-int points          = 0;
-int ticket          = 0;
-int consec          = 1;
-datetime prev_time = 0;
+int    error        = 0;
+int    points       = 0;
+int    ticket       = 0;
+int    consec       = 1;
+datetime prev_time  = 0;
 
 int OnInit()
 {
@@ -78,24 +73,17 @@ void OnTick()
         int cci_center = 0;
         int cci_max = cci_center + cci_levels;
         int cci_min = cci_center - cci_levels;
-        
-        int rsi_center = 50;
-        int rsi_max = rsi_center + rsi_levels;
-        int rsi_min = rsi_center - rsi_levels;
         //---
     
         // Indicators
         double stoch_signal = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_S, MODE_SMA, 0, MODE_SIGNAL, 1);
         double stoch_main   = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_S, MODE_SMA, 0, MODE_MAIN, 1);
         double cci          = iCCI(NULL, 0, cci_period, PRICE_TYPICAL, 1);
-        double rsi          = iRSI(NULL, 0, rsi_period, PRICE_TYPICAL, 1);
-        double macd_signal  = iMACD(NULL, 0, macd_fast, macd_slow, macd_ema, PRICE_TYPICAL, MODE_SIGNAL, 1);
-        double macd_main    = iMACD(NULL, 0, macd_fast, macd_slow, macd_ema, PRICE_TYPICAL, MODE_MAIN, 1);
         //---
         
         // Orders
-        if (stoch_main >= stoch_max && stoch_main <= stoch_signal && macd_main >= 0 && macd_main >= macd_signal && cci >= cci_max && rsi >= rsi_max) SendOrder(OP_SELL);
-        if (stoch_main <= stoch_min && stoch_main >= stoch_signal && macd_main <= 0 && macd_main <= macd_signal && cci <= cci_min && rsi <= rsi_min) SendOrder(OP_BUY); 
+        if (stoch_main >= stoch_max && stoch_main <= stoch_signal && cci >= cci_max) SendOrder(OP_SELL);
+        if (stoch_main <= stoch_min && stoch_main >= stoch_signal && cci <= cci_min) SendOrder(OP_BUY); 
         //---
     }
 }
@@ -174,8 +162,8 @@ void UpdateState()
         {
             points++;
             consec++;
-        }
-        else if (AccountBalance() < prev_balance)
+        } else
+        if (AccountBalance() < prev_balance)
         {
             points--;
             consec = 1;
@@ -198,10 +186,9 @@ void SendOrder(int OP_TYPE)
     int slip       = 0;
     string comment = "Magic Number: " + IntegerToString(magic_numb);
     double lots    = min_lots * consec;
-    in_trade = true;
-
-    if (lots > max_lots)
-        lots = max_lots;
+    in_trade       = true;
+    
+    if (lots > max_lots) lots = max_lots;
 
     RefreshRates();
     if (OP_TYPE == OP_SELL)
