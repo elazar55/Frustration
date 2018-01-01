@@ -10,13 +10,9 @@ extern double min_lots        = 0.01;
 extern double max_lots        = 0.01;
 extern double tp_pips         = 20;
 extern double sl_pips         = 20;
-extern int    stoch_K         = 5;
-extern int    stoch_S         = 3;
-extern int    stoch_D         = 3;
-extern int    stoch_levels    = 30;
-extern int    cci_period      = 14;
-extern int    cci_levels      = 100;
-
+extern int fast_period = 2;
+extern int slow_period = 10;
+extern double threshhold = 2;
 // Internal state variables
 bool   buy_trade    = false;
 bool   sell_trade   = false;
@@ -65,25 +61,15 @@ void OnTick()
 
     if (!in_trade)
     {
-        // Centers
-        int stoch_center = 50;
-        int stoch_max = stoch_center + stoch_levels;
-        int stoch_min = stoch_center - stoch_levels;
-        
-        int cci_center = 0;
-        int cci_max = cci_center + cci_levels;
-        int cci_min = cci_center - cci_levels;
-        //---
-    
         // Indicators
-        double stoch_signal = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_S, MODE_SMA, 0, MODE_SIGNAL, 1);
-        double stoch_main   = iStochastic(NULL, 0, stoch_K, stoch_D, stoch_S, MODE_SMA, 0, MODE_MAIN, 1);
-        double cci          = iCCI(NULL, 0, cci_period, PRICE_TYPICAL, 1);
+        double ma_short = iMA(NULL, 0, fast_period, 0, MODE_SMA, PRICE_CLOSE, 1);
+        double ma_long  = iMA(NULL, 0, slow_period, 0, MODE_SMA, PRICE_CLOSE, 1);
+        double percent = ((ma_short / ma_long) - 1) * 10000;
         //---
         
         // Orders
-        if (stoch_main >= stoch_max && stoch_main <= stoch_signal && cci >= cci_max) SendOrder(OP_SELL);
-        if (stoch_main <= stoch_min && stoch_main >= stoch_signal && cci <= cci_min) SendOrder(OP_BUY); 
+        if (percent >  threshhold) SendOrder(OP_SELL);
+        if (percent < -threshhold) SendOrder(OP_BUY); 
         //---
     }
 }
@@ -128,33 +114,6 @@ void UpdateState()
     }
     RefreshRates();
 
-    // Trailing stop
-    /*double min_stoplevel = MarketInfo(NULL, MODE_STOPLEVEL) * Point;
-
-    if (buy_trade)
-    {
-        if (Bid >= price + min_stoplevel)
-        {
-            double new_sl = NormalizeDouble(Bid - min_stoplevel, Digits);
-
-            if (new_sl > stoploss)
-            {
-                OrderModify(ticket, 0, new_sl, takeprofit, 0, clrNONE);
-            }
-        }
-    }
-    if (sell_trade)
-    {
-        if (Ask <= price - min_stoplevel)
-        {
-            double new_sl = NormalizeDouble(Ask + min_stoplevel, Digits);
-
-            if (new_sl < stoploss) {
-                OrderModify(ticket, 0, new_sl, takeprofit, 0, clrNONE);
-            }
-        }
-    }*/
-
     // Count trades ended in profit as points for testing
     if (!in_trade && prev_trade)
     {
@@ -173,10 +132,15 @@ void UpdateState()
     prev_balance = AccountBalance();
 
     // Print state variables
+    double ma_short = iMA(NULL, 0, fast_period, 0, MODE_SMA, PRICE_CLOSE, 0);
+    double ma_long  = iMA(NULL, 0, slow_period, 0, MODE_SMA, PRICE_CLOSE, 0);
+    double percent = ((ma_short / ma_long) - 1) * 10000;
+    
     Comment(
            "\nProfit: "    + DoubleToStr(profit, 2)   + " - " +
            "Consecutive: " + IntegerToString(consec)  + " - " +
            "In Trade: "    + DoubleToStr(in_trade, 0) + " - " +
+           "% Diff: "      + DoubleToStr(percent, 3)  + " - " +
            "Time: "        + IntegerToString(TimeCurrent() - Time[0])
            );
 }
