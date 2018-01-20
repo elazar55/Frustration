@@ -4,22 +4,24 @@
 #property strict
 
 // Input variables
-extern int    magic_numb      = 1;
-extern int    training_target = 100;
-extern double min_lots        = 0.01;
-extern double max_lots        = 0.01;
-extern double sl_pips         = 100;
-extern double tp_pips         = 100;
-extern int    macd_fast       = 12;
-extern int    macd_slow       = 26;
-extern int    macd_signal     = 9;
-extern double macd_levels     = 10;
-extern int    cci_period      = 10;
-extern int    cci_levels      = 100;
-extern int    stoch_k         = 5;
-extern int    stoch_s         = 3;
-extern int    stoch_d         = 3;
-extern int    stoch_levels    = 20;
+extern int    magic_numb    = 1;
+extern double min_lots      = 0.01;
+extern double max_lots      = 0.01;
+extern double steepness     = 10;
+extern double sl_pips       = 100;
+extern double tp_pips       = 100;
+extern int    macd_fast     = 12;
+extern int    macd_slow     = 26;
+extern int    macd_signal   = 9;
+extern double macd_levels   = 0.0001;
+extern int    cci_period    = 10;
+extern double cci_levels    = 100;
+extern int    stoch_k       = 5;
+extern int    stoch_s       = 3;
+extern int    stoch_d       = 3;
+extern double stoch_levels  = 20;
+extern int    rsi_period    = 14;
+extern double rsi_levels    = 30;
 
 // Internal state variables
 bool     buy_trade    = false;
@@ -47,18 +49,19 @@ void OnDeinit(const int reason) {}
 
 double OnTester()
 {
-    double TRADES           = TesterStatistics(STAT_TRADES);
-    double PROFIT           = TesterStatistics(STAT_PROFIT_FACTOR);
-    double PROFIT_TRADES    = TesterStatistics(STAT_PROFIT_TRADES);
+    double PROFIT_TRADES = TesterStatistics(STAT_PROFIT_TRADES);
+    double PROFIT_FACTOR = TesterStatistics(STAT_PROFIT_FACTOR);
 
-    double confidence = MathSqrt(TRADES) / MathSqrt(training_target);
-    if (confidence > 1) confidence = 1;
-    if (PROFIT < 0) PROFIT = 1;
-    if (PROFIT > 1) PROFIT = 1;
-
-    return NormalizeDouble(PROFIT * confidence, 2);
-    //if (TRADES == 0) return 0;
-    //return NormalizeDouble((PROFIT_TRADES * 100 / TRADES)  * confidence, 2);
+//    double confidence = MathSqrt(PROFIT_TRADES) / MathSqrt(trades_target);
+//    if (confidence > 1) confidence = 1;
+//    if (PROFIT > profit_target || PROFIT < 0) PROFIT = profit_target;
+//    return NormalizeDouble(PROFIT * confidence, 3);
+    
+    PROFIT_FACTOR /= 1.01;
+    if (PROFIT_FACTOR > 1) PROFIT_FACTOR = 1;
+    
+    double score = MathPow(PROFIT_FACTOR, steepness) * PROFIT_TRADES;
+    return NormalizeDouble(score, 2);
 }
 
 void OnTick()
@@ -68,23 +71,27 @@ void OnTick()
     // Trade once per candle
     if (prev_time == Time[0]) return;
     prev_time = Time[0];
+    
+    if (Hour() == 21) return;
     // ---
-
-    // Indicators
-    double macdSig = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_CLOSE, MODE_SIGNAL, 1);
-    double cci     = iCCI(NULL, 0, cci_period, PRICE_CLOSE, 1);
-    double stoch   = iStochastic(NULL, 0, stoch_k, stoch_d, stoch_s, MODE_SMA, STO_LOWHIGH, MODE_SIGNAL, 1);
-
-    double macdLevel = macd_levels * Point;
-    double stoch_max = 50 + stoch_levels;
-    double stoch_min = 50 - stoch_levels;
-    // ---
-
+    
     if (!in_trade)
     {
+        // Indicators
+        double macdSig = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_CLOSE, MODE_SIGNAL, 1);
+        double cci     = iCCI(NULL, 0, cci_period, PRICE_CLOSE, 1);
+        double stoch   = iStochastic(NULL, 0, stoch_k, stoch_d, stoch_s, MODE_SMA, STO_LOWHIGH, MODE_SIGNAL, 1);
+        double rsi     = iRSI(NULL, 0, rsi_period, PRICE_CLOSE, 1);
+        
+        double stoch_max = 50 + stoch_levels;
+        double stoch_min = 50 - stoch_levels;
+        double rsi_max   = 50 + rsi_levels;
+        double rsi_min   = 50 - rsi_levels;
+        // ---
+    
         // Orders
-        if (macdSig >  macdLevel && cci >  cci_levels && stoch > stoch_max) SendOrder(OP_SELL);
-        if (macdSig < -macdLevel && cci < -cci_levels && stoch < stoch_min) SendOrder(OP_BUY);
+        if (macdSig >  macd_levels && cci >  cci_levels && stoch >= stoch_max && rsi >= rsi_max) SendOrder(OP_SELL);
+        if (macdSig < -macd_levels && cci < -cci_levels && stoch <= stoch_min && rsi <= rsi_min) SendOrder(OP_BUY);
         // ---
     }
 }
@@ -142,7 +149,7 @@ void UpdateState()
             double new_sl = NormalizeDouble(Bid - min_stoplevel, Digits);
             double old_sl = NormalizeDouble(order_sl, Digits);
 
-            if (new_sl > old_sl)
+            if (new_sl >= old_sl + min_stoplevel)
                 error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
         }
     }
@@ -153,8 +160,8 @@ void UpdateState()
             double new_sl = NormalizeDouble(Ask + min_stoplevel, Digits);
             double old_sl = NormalizeDouble(order_sl, Digits);
 
-            if (new_sl < old_sl)
-                error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrNONE);
+            if (new_sl <= old_sl - min_stoplevel)
+                error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
         }
     }
     // ---
