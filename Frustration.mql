@@ -7,21 +7,22 @@
 extern int    magic_numb    = 1;
 extern double min_lots      = 0.01;
 extern double max_lots      = 0.01;
-extern double steepness     = 10;
+extern double steepness      = 10;
+extern double offset      = 1;
 extern double sl_pips       = 100;
 extern double tp_pips       = 100;
 extern int    macd_fast     = 12;
 extern int    macd_slow     = 26;
 extern int    macd_signal   = 9;
-extern double macd_levels   = 0.0001;
+extern double macd_levels = 0.0001;
 extern int    cci_period    = 10;
-extern double cci_levels    = 100;
+extern int cci_levels = 100;
 extern int    stoch_k       = 5;
 extern int    stoch_s       = 3;
 extern int    stoch_d       = 3;
-extern double stoch_levels  = 20;
+extern int stoch_levels  = 30;
 extern int    rsi_period    = 14;
-extern double rsi_levels    = 30;
+extern int rsi_levels    = 30;
 
 // Internal state variables
 bool     buy_trade    = false;
@@ -45,22 +46,25 @@ int OnInit()
     return(INIT_SUCCEEDED);
 }
 
-void OnDeinit(const int reason) {}
+double Sigmoid(double x)
+{
+    double in     = (offset - x) * steepness;
+    double answer = 1 / (1 + MathExp(in));
+    return answer;
+}
+
+void OnDeinit(const int reason)
+{
+    //for (double i = 0; i <= 2; i += 0.1)
+    //    Print(DoubleToString(i, 2) + ": " + DoubleToString(Sigmoid(i)));
+}
 
 double OnTester()
 {
-    double PROFIT_TRADES = TesterStatistics(STAT_PROFIT_TRADES);
+    double TRADES        = TesterStatistics(STAT_TRADES);
     double PROFIT_FACTOR = TesterStatistics(STAT_PROFIT_FACTOR);
-
-//    double confidence = MathSqrt(PROFIT_TRADES) / MathSqrt(trades_target);
-//    if (confidence > 1) confidence = 1;
-//    if (PROFIT > profit_target || PROFIT < 0) PROFIT = profit_target;
-//    return NormalizeDouble(PROFIT * confidence, 3);
     
-    PROFIT_FACTOR /= 1.01;
-    if (PROFIT_FACTOR > 1) PROFIT_FACTOR = 1;
-    
-    double score = MathPow(PROFIT_FACTOR, steepness) * PROFIT_TRADES;
+    double score = Sigmoid(PROFIT_FACTOR) * TRADES;
     return NormalizeDouble(score, 2);
 }
 
@@ -72,7 +76,7 @@ void OnTick()
     if (prev_time == Time[0]) return;
     prev_time = Time[0];
     
-    if (Hour() == 21) return;
+    if (Hour() == 21 || Hour() == 22) return;
     // ---
     
     if (!in_trade)
@@ -82,7 +86,6 @@ void OnTick()
         double cci     = iCCI(NULL, 0, cci_period, PRICE_CLOSE, 1);
         double stoch   = iStochastic(NULL, 0, stoch_k, stoch_d, stoch_s, MODE_SMA, STO_LOWHIGH, MODE_SIGNAL, 1);
         double rsi     = iRSI(NULL, 0, rsi_period, PRICE_CLOSE, 1);
-        
         double stoch_max = 50 + stoch_levels;
         double stoch_min = 50 - stoch_levels;
         double rsi_max   = 50 + rsi_levels;
@@ -149,7 +152,7 @@ void UpdateState()
             double new_sl = NormalizeDouble(Bid - min_stoplevel, Digits);
             double old_sl = NormalizeDouble(order_sl, Digits);
 
-            if (new_sl >= old_sl + min_stoplevel)
+            if (new_sl > old_sl)
                 error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
         }
     }
@@ -160,7 +163,7 @@ void UpdateState()
             double new_sl = NormalizeDouble(Ask + min_stoplevel, Digits);
             double old_sl = NormalizeDouble(order_sl, Digits);
 
-            if (new_sl <= old_sl - min_stoplevel)
+            if (new_sl < old_sl)
                 error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
         }
     }
