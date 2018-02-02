@@ -7,22 +7,22 @@
 extern int    magic_numb    = 1;
 extern double min_lots      = 0.01;
 extern double max_lots      = 0.01;
-extern double steepness      = 10;
-extern double offset      = 1;
+extern double steepness     = 1;
+extern double offset        = 0;
 extern double sl_pips       = 100;
 extern double tp_pips       = 100;
 extern int    macd_fast     = 12;
 extern int    macd_slow     = 26;
 extern int    macd_signal   = 9;
-extern double macd_levels = 0.0001;
+extern double macd_levels   = 0.0001;
 extern int    cci_period    = 10;
-extern int cci_levels = 100;
+extern int    cci_levels    = 100;
 extern int    stoch_k       = 5;
 extern int    stoch_s       = 3;
 extern int    stoch_d       = 3;
-extern int stoch_levels  = 30;
+extern int    stoch_levels  = 30;
 extern int    rsi_period    = 14;
-extern int rsi_levels    = 30;
+extern int    rsi_levels    = 30;
 
 // Internal state variables
 bool     buy_trade    = false;
@@ -61,10 +61,10 @@ void OnDeinit(const int reason)
 
 double OnTester()
 {
-    double TRADES        = TesterStatistics(STAT_TRADES);
-    double PROFIT_FACTOR = TesterStatistics(STAT_PROFIT_FACTOR);
+    double TRADES = TesterStatistics(STAT_PROFIT_TRADES);
+    double PROFIT = TesterStatistics(STAT_PROFIT);
     
-    double score = Sigmoid(PROFIT_FACTOR) * TRADES;
+    double score = Sigmoid(PROFIT) * TRADES;
     return NormalizeDouble(score, 2);
 }
 
