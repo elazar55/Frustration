@@ -21,8 +21,8 @@ extern int    stoch_k       = 5;
 extern int    stoch_s       = 3;
 extern int    stoch_d       = 3;
 extern int    stoch_levels  = 30;
-extern int    rsi_period    = 14;
-extern int    rsi_levels    = 30;
+//extern int    rsi_period    = 14;
+//extern int    rsi_levels    = 30;
 
 // Internal state variables
 bool     buy_trade    = false;
@@ -42,7 +42,7 @@ int      ticket       = 0;
 
 int OnInit()
 {
-    UpdateState();
+    UpdateStateVariables();
     return(INIT_SUCCEEDED);
 }
 
@@ -61,7 +61,7 @@ void OnDeinit(const int reason)
 
 double OnTester()
 {
-    double TRADES = TesterStatistics(STAT_PROFIT_TRADES);
+    double TRADES = TesterStatistics(STAT_TRADES);
     double PROFIT = TesterStatistics(STAT_PROFIT);
     
     double score = Sigmoid(PROFIT) * TRADES;
@@ -70,36 +70,93 @@ double OnTester()
 
 void OnTick()
 {
-    UpdateState();
+    UpdateStateVariables();
+    TrailStopLoss();
+    CountConsecutiveProfit();
+    PrintStateVariables();
+    
+    if (!IsIdle())
+      MakeTrades();
+}
 
-    // Trade once per candle
-    if (prev_time == Time[0]) return;
-    prev_time = Time[0];
-    
-    if (Hour() == 21 || Hour() == 22) return;
-    // ---
-    
+void MakeTrades()
+{
     if (!in_trade)
     {
         // Indicators
-        double macdSig = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_CLOSE, MODE_SIGNAL, 1);
-        double cci     = iCCI(NULL, 0, cci_period, PRICE_CLOSE, 1);
-        double stoch   = iStochastic(NULL, 0, stoch_k, stoch_d, stoch_s, MODE_SMA, STO_LOWHIGH, MODE_SIGNAL, 1);
-        double rsi     = iRSI(NULL, 0, rsi_period, PRICE_CLOSE, 1);
+        double macdMain  = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_CLOSE, MODE_MAIN, 1);
+        double macdSig   = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_CLOSE, MODE_SIGNAL, 1);
+        double cci       = iCCI(NULL, 0, cci_period, PRICE_CLOSE, 1);
+        double stoch     = iStochastic(NULL, 0, stoch_k, stoch_d, stoch_s, MODE_SMA, STO_LOWHIGH, MODE_SIGNAL, 1);
         double stoch_max = 50 + stoch_levels;
         double stoch_min = 50 - stoch_levels;
-        double rsi_max   = 50 + rsi_levels;
-        double rsi_min   = 50 - rsi_levels;
-        // ---
     
-        // Orders
-        if (macdSig >  macd_levels && cci >  cci_levels && stoch >= stoch_max && rsi >= rsi_max) SendOrder(OP_SELL);
-        if (macdSig < -macd_levels && cci < -cci_levels && stoch <= stoch_min && rsi <= rsi_min) SendOrder(OP_BUY);
-        // ---
+        if (macdMain >  macd_levels && macdMain < macdSig && stoch > stoch_max && cci >  cci_levels) SendOrder(OP_SELL);
+        if (macdMain < -macd_levels && macdMain > macdSig && stoch < stoch_min && cci < -cci_levels) SendOrder(OP_BUY);
     }
 }
 
-void UpdateState()
+bool IsIdle()
+{
+    if (prev_time == Time[0])         return true;
+    if (Hour() == 21 || Hour() == 22) return true;
+    
+    prev_time = Time[0];
+    return false;
+}
+
+void TrailStopLoss()
+{
+    double min_stoplevel = MarketInfo(NULL, MODE_STOPLEVEL) * Point;
+    if (buy_trade)
+    {
+        if (Bid >= order_price + min_stoplevel)
+        {
+            double new_sl = NormalizeDouble(Bid - min_stoplevel, Digits);
+            double old_sl = NormalizeDouble(order_sl, Digits);
+
+            if (new_sl > old_sl)
+                error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
+        }
+    }
+    if (sell_trade)
+    {
+        if (Ask <= order_price - min_stoplevel)
+        {
+            double new_sl = NormalizeDouble(Ask + min_stoplevel, Digits);
+            double old_sl = NormalizeDouble(order_sl, Digits);
+
+            if (new_sl < old_sl)
+                error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
+        }
+    }
+}
+
+void CountConsecutiveProfit()
+{
+    if (!in_trade && prev_trade)
+    {
+             if (AccountBalance() >  prev_balance) consec++;
+        else if (AccountBalance() <= prev_balance) consec = 1;
+    }
+    prev_trade   = in_trade;
+    prev_balance = AccountBalance();
+}
+
+void PrintStateVariables()
+{
+    if (IsOptimization()) return;
+
+    datetime time   = TimeCurrent() - Time[0];
+    Comment(
+           "Consecutive: " + IntegerToString(consec)      + " - " +
+           "Profit: "      + DoubleToStr(order_profit, 2) + " - " +
+           "In Trade: "    + DoubleToStr(in_trade, 0)     + " - " +
+           "Time: "        + IntegerToString(time)
+           );
+}
+
+void UpdateStateVariables()
 {
     buy_trade    = false;
     sell_trade   = false;
@@ -141,56 +198,6 @@ void UpdateState()
         }
     }
     RefreshRates();
-    // ---
-
-    // Trailing stop
-    double min_stoplevel = MarketInfo(NULL, MODE_STOPLEVEL) * Point;
-    if (buy_trade)
-    {
-        if (Bid >= order_price + min_stoplevel)
-        {
-            double new_sl = NormalizeDouble(Bid - min_stoplevel, Digits);
-            double old_sl = NormalizeDouble(order_sl, Digits);
-
-            if (new_sl > old_sl)
-                error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
-        }
-    }
-    if (sell_trade)
-    {
-        if (Ask <= order_price - min_stoplevel)
-        {
-            double new_sl = NormalizeDouble(Ask + min_stoplevel, Digits);
-            double old_sl = NormalizeDouble(order_sl, Digits);
-
-            if (new_sl < old_sl)
-                error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
-        }
-    }
-    // ---
-
-
-    // Count trades ended in profit
-    if (!in_trade && prev_trade)
-    {
-             if (AccountBalance() >  prev_balance) consec++;
-        else if (AccountBalance() <= prev_balance) consec = 1;
-    }
-    prev_trade   = in_trade;
-    prev_balance = AccountBalance();
-    // ---
-
-    // Print state variables
-    if (IsOptimization()) return;
-
-    datetime time   = TimeCurrent() - Time[0];
-    Comment(
-           "Consecutive: " + IntegerToString(consec)      + " - " +
-           "Profit: "      + DoubleToStr(order_profit, 2) + " - " +
-           "In Trade: "    + DoubleToStr(in_trade, 0)     + " - " +
-           "Time: "        + IntegerToString(time)
-           );
-    // ---
 }
 
 void SendOrder(int OP_TYPE)
