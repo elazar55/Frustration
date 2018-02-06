@@ -3,7 +3,7 @@
 #property version   "1.00"
 #property strict
 
-// Input variables
+//--- Input variables
 extern int    magic_numb    = 1;
 extern double min_lots      = 0.01;
 extern double max_lots      = 0.01;
@@ -21,10 +21,8 @@ extern int    stoch_k       = 5;
 extern int    stoch_s       = 3;
 extern int    stoch_d       = 3;
 extern int    stoch_levels  = 30;
-//extern int    rsi_period    = 14;
-//extern int    rsi_levels    = 30;
 
-// Internal state variables
+//--- Internal state variables
 bool     buy_trade    = false;
 bool     in_trade     = false;
 bool     prev_trade   = false;
@@ -40,12 +38,18 @@ int      consec       = 1;
 int      error        = 0;
 int      ticket       = 0;
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 int OnInit()
 {
     UpdateStateVariables();
     return(INIT_SUCCEEDED);
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 double Sigmoid(double x)
 {
     double in     = (offset - x) * steepness;
@@ -53,12 +57,18 @@ double Sigmoid(double x)
     return answer;
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
     //for (double i = 0; i <= 2; i += 0.1)
     //    Print(DoubleToString(i, 2) + ": " + DoubleToString(Sigmoid(i)));
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 double OnTester()
 {
     double TRADES = TesterStatistics(STAT_TRADES);
@@ -68,8 +78,12 @@ double OnTester()
     return NormalizeDouble(score, 2);
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 void OnTick()
 {
+    HandleErrors();
     UpdateStateVariables();
     TrailStopLoss();
     CountConsecutiveProfit();
@@ -79,6 +93,9 @@ void OnTick()
       MakeTrades();
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 void MakeTrades()
 {
     if (!in_trade)
@@ -96,6 +113,20 @@ void MakeTrades()
     }
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void HandleErrors()
+{
+    if (error == ERR_NO_ERROR)  return;
+    if (error == ERR_NO_RESULT) return;
+    
+    Alert("There has been an error. Check Logs.");
+}
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 bool IsIdle()
 {
     if (prev_time == Time[0])         return true;
@@ -105,33 +136,41 @@ bool IsIdle()
     return false;
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 void TrailStopLoss()
 {
     double min_stoplevel = MarketInfo(NULL, MODE_STOPLEVEL) * Point;
+    double stoppingPrice = order_price;
+    bool   modifySL      = false;
+    double old_sl        = NormalizeDouble(order_sl, Digits);
+    double new_sl        = 0;
+    
     if (buy_trade)
     {
-        if (Bid >= order_price + min_stoplevel)
-        {
-            double new_sl = NormalizeDouble(Bid - min_stoplevel, Digits);
-            double old_sl = NormalizeDouble(order_sl, Digits);
-
-            if (new_sl > old_sl)
-                error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
-        }
+        stoppingPrice += min_stoplevel;
+        new_sl         = NormalizeDouble(Bid - min_stoplevel, Digits);
+        
+        if (Bid >= stoppingPrice && new_sl > old_sl)
+            modifySL = true;
     }
     if (sell_trade)
     {
-        if (Ask <= order_price - min_stoplevel)
-        {
-            double new_sl = NormalizeDouble(Ask + min_stoplevel, Digits);
-            double old_sl = NormalizeDouble(order_sl, Digits);
-
-            if (new_sl < old_sl)
-                error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
-        }
+        stoppingPrice -= min_stoplevel;
+        new_sl         = NormalizeDouble(Ask + min_stoplevel, Digits);
+        
+        if (Ask <= stoppingPrice && new_sl < old_sl)
+            modifySL = true;
     }
+    
+    if (modifySL)
+        error = OrderModify(ticket, 0, new_sl, order_tp, 0, clrGreenYellow);
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 void CountConsecutiveProfit()
 {
     if (!in_trade && prev_trade)
@@ -143,11 +182,14 @@ void CountConsecutiveProfit()
     prev_balance = AccountBalance();
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 void PrintStateVariables()
 {
     if (IsOptimization()) return;
-
-    datetime time   = TimeCurrent() - Time[0];
+    datetime time = TimeCurrent() - Time[0];
+    
     Comment(
            "Consecutive: " + IntegerToString(consec)      + " - " +
            "Profit: "      + DoubleToStr(order_profit, 2) + " - " +
@@ -156,6 +198,9 @@ void PrintStateVariables()
            );
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 void UpdateStateVariables()
 {
     buy_trade    = false;
@@ -200,6 +245,9 @@ void UpdateStateVariables()
     RefreshRates();
 }
 
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 void SendOrder(int OP_TYPE)
 {
     int slip       = 1;
@@ -218,7 +266,7 @@ void SendOrder(int OP_TYPE)
         double take_profit = NormalizeDouble(Bid - tp_pips * Point, Digits);
         double stop_loss   = NormalizeDouble(Ask + sl_pips * Point, Digits);
 
-        error = OrderSend(Symbol(), OP_TYPE, lots, Bid, slip, stop_loss,
+        ticket = OrderSend(Symbol(), OP_TYPE, lots, Bid, slip, stop_loss,
                           take_profit, comment, magic_numb, 0, clrRed);
     }
     if (OP_TYPE == OP_BUY)
@@ -229,7 +277,7 @@ void SendOrder(int OP_TYPE)
         double take_profit = NormalizeDouble(Ask + tp_pips * Point, Digits);
         double stop_loss   = NormalizeDouble(Bid - sl_pips * Point, Digits);
 
-        error = OrderSend(Symbol(), OP_TYPE, lots, Ask, slip, stop_loss,
+        ticket = OrderSend(Symbol(), OP_TYPE, lots, Ask, slip, stop_loss,
                           take_profit, comment, magic_numb, 0, clrLimeGreen);
     }
 }
