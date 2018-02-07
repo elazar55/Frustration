@@ -101,15 +101,14 @@ void MakeTrades()
     if (!in_trade)
     {
         // Indicators
-        double macdMain  = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_CLOSE, MODE_MAIN, 1);
         double macdSig   = iMACD(NULL, 0, macd_fast, macd_slow, macd_signal, PRICE_CLOSE, MODE_SIGNAL, 1);
         double cci       = iCCI(NULL, 0, cci_period, PRICE_CLOSE, 1);
         double stoch     = iStochastic(NULL, 0, stoch_k, stoch_d, stoch_s, MODE_SMA, STO_LOWHIGH, MODE_SIGNAL, 1);
         double stoch_max = 50 + stoch_levels;
         double stoch_min = 50 - stoch_levels;
     
-        if (macdMain >  macd_levels && macdMain < macdSig && stoch > stoch_max && cci >  cci_levels) SendOrder(OP_SELL);
-        if (macdMain < -macd_levels && macdMain > macdSig && stoch < stoch_min && cci < -cci_levels) SendOrder(OP_BUY);
+        if (macdSig >  macd_levels && stoch > stoch_max && cci >  cci_levels) SendOrder(OP_SELL);
+        if (macdSig < -macd_levels && stoch < stoch_min && cci < -cci_levels) SendOrder(OP_BUY);
     }
 }
 
